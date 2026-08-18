@@ -20,15 +20,23 @@ component SigilOneShotCompilation {
       streams CompilationEvent and returns CompilationReport only after successful
       completed-event settlement once the event writer is bound
 
-      cancellation rejects with COMPILER_CANCELLED; an unknown or conflicting target,
-      profile, stage, or focus rejects with COMPILER_INVALID_INVOCATION; unavailable
-      required evaluators reject with COMPILER_PROFILE_EVALUATORS_REQUIRED; host or
-      protocol failure rejects with COMPILER_FAILED
+      before event-writer binding, an unknown or conflicting target, profile, stage,
+      or focus rejects with COMPILER_INVALID_INVOCATION, and unavailable required
+      evaluators reject with COMPILER_PROFILE_EVALUATORS_REQUIRED. After binding,
+      cancellation rejects with COMPILER_CANCELLED; an invalid report-export
+      destination rejects with COMPILER_INVALID_INVOCATION; host or protocol failure
+      rejects with COMPILER_FAILED
 
       an invalid, missing, or unconfigured workspacePath rejects with
       COMPILER_INVALID_INVOCATION before event-writer binding. An inaccessible path
       or workspace that SigilCore cannot load cleanly rejects with COMPILER_FAILED
       before event-writer binding.
+
+      event-writer binding failure rejects with COMPILER_FAILED before binding and
+      returns no report or terminal event.
+
+      cancellation observed before event-writer binding is ignored; pre-binding
+      validation continues to its ordinary rejection or binding outcome.
 
       every rejection after event-writer binding returns no CompilationReport and
       emits its corresponding terminal event whenever a compatible
@@ -74,15 +82,18 @@ expand SigilOneShotCompilation {
       optional CompilationHistoryWarning to hostWarningSink when configured; ignore
       callback failure because warning delivery is non-authoritative.
 
-      Observe cancellation through evaluation and report construction. Immediately
-      before requested export begins, or immediately before completed-event
-      settlement when export is absent, cross one success linearization point after
-      which cancellation no longer changes this invocation's outcome.
+      After event-writer binding, observe cancellation through evaluation and report
+      construction. Immediately before requested export begins, or immediately before
+      completed-event settlement when export is absent, cross one success
+      linearization point after which cancellation no longer changes this
+      invocation's outcome.
 
       When export is requested, delegate destination validation and atomic writing to
       SigilCompilationReportExporter after the authoritative CompilationReport is
-      constructed and before completed settlement. Export rejection returns no report
-      and emits a failed terminal event when transport remains writable.
+      constructed and before completed settlement. Invalid destination rejection is
+      COMPILER_INVALID_INVOCATION; filesystem or atomic-replacement rejection is
+      COMPILER_FAILED. Either returns no report and emits a failed terminal event
+      when transport remains writable.
 
       Cancellation observed before that point rejects with COMPILER_CANCELLED and
       performs no export. Cancellation observed after export begins is ignored for
@@ -91,10 +102,10 @@ expand SigilOneShotCompilation {
     }
 
     OneShotCompilation {
-      Validate CompilationOptions, then acquire the selected configured workspace
-      through SigilCore read-only semantics before asking SigilCompilationTarget to
-      resolve the target against that exact loaded workspace. Resolve the profile,
-      evaluator availability, and target before event-writer binding.
+      Validate CompilationOptions first, then acquire the selected configured
+      workspace through SigilCore read-only semantics. Resolve profile and evaluator
+      availability next, then resolve the target against that workspace, all before
+      event-writer binding.
 
       Delegate profile, requested-stage, focus mapping, dependency closure, evaluator
       availability, budgets, and capabilities to SigilCompilationProfile.
@@ -103,9 +114,9 @@ expand SigilOneShotCompilation {
       CompilationEventWriter and pass that writer to SigilCompilationEvaluation.
       Never share a writer or sink binding across invocations.
 
-      Dispatch the resolved workspace, target, stages, capabilities, and optional
-      prior report to SigilCompilationEvaluation. Never construct a writable selected
-      workspace capability.
+      Dispatch the resolved workspace, target, stages, and capabilities to
+      SigilCompilationEvaluation. Never construct a writable selected workspace
+      capability.
 
       Supply SigilCompilationEvaluation with the resolved workspace and complete
       glossary and implementation-discovery evidence required by
@@ -135,10 +146,12 @@ expand SigilOneShotCompilation {
   constraints {
     DependencyDirection {
       SigilOneShotCompilation depends on SigilCore for deterministic workspace
-      semantics and on SigilCompilationTarget for target resolution.
+      semantics, on SigilContextRetrieval for evidence-shape awareness only, and on
+      SigilCompilationTarget for target resolution.
 
       SigilCompilationEvaluation depends on SigilContextRetrieval for authoritative
-      purpose evidence; one-shot orchestration does not duplicate retrieval policy.
+      purpose evidence supplied through provider-neutral requests. One-shot
+      orchestration does not invoke retrieval or redefine retrieval policy.
 
       SigilCore does not depend on compiler evaluation, skills, adapters, CLI
       behavior, or editor behavior.
@@ -149,11 +162,12 @@ expand SigilOneShotCompilation {
       source, configuration, tests, documentation, and selected repository evidence,
       remains read-only during compilation.
 
-      Compiler-owned compilation may write only its explicitly owned proposal-
-      workspace, session, event, report, history, and requested-export state.
+      SigilOneShotCompilation may write only its event, report, history, and
+      requested-export state. Reusable session and proposal-workspace state belong to
+      their dedicated owners.
 
-      Evaluators receive read-only proposal-workspace access and never receive the
-      compiler's writable proposal-workspace capability.
+      Evaluators receive read-only workspace evidence and never receive a writable
+      workspace capability.
 
       An externally supplied CLI adapter or provider is user-selected and
       self-declared. The compiler requests its declared restrictions but cannot
@@ -164,6 +178,7 @@ expand SigilOneShotCompilation {
       claim general proof of implementation feasibility. Context-only stages may cite
       concrete repository evidence demonstrating a constraint on the proposed design.
     }
+
   }
 
   decisions {
@@ -173,7 +188,7 @@ expand SigilOneShotCompilation {
       error without an event.
 
       Scope: Governs one-shot invocation rejection and terminal event settlement;
-      excludes event-writer construction failure and reusable compilation sessions.
+      excludes reusable compilation sessions.
 
       Trade-offs: Callers must distinguish pre-binding rejection from rejection after
       event transport is established.
@@ -182,18 +197,39 @@ expand SigilOneShotCompilation {
       for validation failures that occur before a writer exists.
 
       Consequences: Event-driven hosts receive deterministic terminal settlement for
-      every rejection covered by an established writer without requiring impossible
-      pre-writer delivery.
+      every rejection covered by an established writer. A failed writer binding is a
+      pre-binding COMPILER_FAILED without an impossible terminal delivery.
+    }
+
+    EvaluatorDiagnosticNormalization {
+      Decision: Treat repeated evaluator diagnostic fingerprints within one stage as
+      duplicate evidence and retain the first occurrence before event delivery.
+
+      Scope: Governs findings returned by one adapter evaluation stage; excludes
+      distinct compiler diagnostic identities, event-reader validation, and cross-run
+      history lifecycle comparison.
+
+      Trade-offs: Later duplicate wording or evidence is not retained, while an
+      evaluator cannot turn a completed compilation into a transport failure by
+      repeating one semantic finding.
+
+      Discarded alternatives: Forwarding every finding was rejected because the
+      version-1 event protocol correctly forbids duplicate fingerprints. Treating a
+      repeat as evaluator failure was rejected because the first valid finding is
+      already sufficient evidence for that semantic identity.
+
+      Consequences: Implementation-focus and design-focus runs preserve a valid
+      terminal event when a provider repeats a finding for the same identity.
     }
 
     InvalidCompilationInvocation {
       Decision: Reject an unknown or conflicting target, profile, stage, focus, or
-      invalid, missing, or unconfigured workspacePath through one stable
-      COMPILER_INVALID_INVOCATION caller error.
+      invalid, missing, or unconfigured workspacePath or report-export destination
+      through one stable COMPILER_INVALID_INVOCATION caller error.
 
-      Scope: Governs one-shot invocation validation; excludes inaccessible or invalid
-      workspace loading, evaluator availability, cancellation, and host or protocol
-      failure.
+      Scope: Governs one-shot invocation and report-export destination validation;
+      excludes inaccessible or invalid workspace loading, evaluator availability,
+      cancellation, and host or protocol failure.
 
       Trade-offs: One code covers several caller-correctable input categories.
 
@@ -307,8 +343,11 @@ expand SigilOneShotCompilation {
 
   cases {
     CompilationInvocation {
-      Cancellation during evaluation or report construction returns
-      COMPILER_CANCELLED and performs no export.
+      Pre-binding cancellation does not alter validation, workspace acquisition,
+      profile resolution, evaluator availability, or target resolution.
+
+      Cancellation after event-writer binding during evaluation or report
+      construction returns COMPILER_CANCELLED and performs no export.
 
       Cancellation after export begins does not alter settlement. Successful export
       completes; failed export rejects with COMPILER_FAILED; neither returns
@@ -319,6 +358,10 @@ expand SigilOneShotCompilation {
     }
 
     OneShotCompilation {
+      When multiple pre-binding conditions fail, resolve the first in this order:
+      CompilationOptions conflict, workspace path or loadability, profile or
+      evaluator availability, then target resolution.
+
       Omitting requestedStage and focus evaluates the complete selected profile.
       Selecting design evaluates architecture-design and its dependency closure;
       selecting implementation evaluates current-code-compatibility and its
@@ -334,6 +377,14 @@ expand SigilOneShotCompilation {
       COMPILER_PROFILE_EVALUATORS_REQUIRED before event-writer binding, return no
       report, and emit no event.
 
+      A rejected event-writer binding returns COMPILER_FAILED before binding, returns
+      no report, and emits no event.
+
+      An invalid requested report-export destination returns
+      COMPILER_INVALID_INVOCATION. Export filesystem or atomic-replacement failure
+      returns COMPILER_FAILED. Both reject after binding with a failed terminal when
+      the writer remains compatible.
+
       disableHistory performs no history read or replacement. Successful one-shot
       evaluation returns an internal result, constructs one authoritative report,
       performs requested export, emits the same report in completed, attempts
@@ -346,6 +397,10 @@ expand SigilOneShotCompilation {
       Failure writing the completed terminal event rejects with COMPILER_FAILED and
       returns no report even when report construction and export succeeded; history
       replacement is not attempted.
+
+      An evaluator that returns the same diagnostic identity more than once produces
+      one diagnostic event and one report entry for its first occurrence; the run
+      continues to its terminal event.
     }
   }
 }

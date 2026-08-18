@@ -35,6 +35,10 @@ component SigilCompilationEvaluation {
       semantics, CompilationProfile supplies stages and capabilities, and
       CompilationStatus derives color
 
+      requestedStage is the already-resolved selected-stage identity from
+      effectiveProfile; it is absent only when the effective profile selects every
+      enabled stage
+
       CompilationEventWriterProtocol governs nonterminal progress framing,
       AgentAdapter executes agentic stages, and EvaluationSkillPackage supplies their
       guidance and rule contracts
@@ -71,8 +75,8 @@ expand SigilCompilationEvaluation {
     }
 
     EvaluationStageLifecycle {
-      An enabled stage is pending, running, completed, failed, skipped-by-dependency,
-      or cancelled.
+      An enabled stage is pending, running, completed, failed, incomplete,
+      skipped-by-dependency, or cancelled.
 
       A stage omitted by the effective profile is disabled rather than incomplete.
     }
@@ -94,9 +98,15 @@ expand SigilCompilationEvaluation {
 
       Aggregate every trustworthy diagnostic produced by enabled stages.
 
-      Record material disagreement when evaluator results for the same component,
-      stage, rule, and semantic subject differ on the presence or severity of an
-      error or warning.
+      Resolve each evaluator finding to its compiler diagnostic identity before live
+      progress delivery. Retain only the first occurrence of a fingerprint in a
+      stage; suppress later repeats from progress, stage counts, and the returned
+      CompilationEvaluationResult.
+
+      Before suppression, record material disagreement from raw evaluator results
+      when the same component, stage, rule, and semantic subject differ on the
+      presence or severity of an error or warning. Disagreement does not create an
+      additional diagnostic event or returned diagnostic.
     }
 
     DeterministicFoundationGating {
@@ -187,7 +197,9 @@ expand SigilCompilationEvaluation {
       CLI, or plugin's enforcement.
 
       The agent may run version, parse, check, fmt --check, retrieve, and read-only
-      text inspection limited to selected evidence or retrieval diagnostics.
+      text inspection. Text inspection means listing metadata or reading file content
+      by path, range, or named symbol solely to verify selected evidence or explain a
+      retrieval diagnostic; it cannot discover new authoritative evidence.
 
       The agent must not run init, mutating fmt, compile, skill installation, network
       commands, code generation, implementation experiments, or commands that modify
@@ -224,6 +236,21 @@ expand SigilCompilationEvaluation {
   }
 
   decisions {
+    EvaluatorDiagnosticNormalization {
+      Decision: Retain the first evaluator finding for each stage-local compiler
+      diagnostic fingerprint before progress emission.
+
+      Scope: Governs evaluator findings, stage diagnostics, and nonterminal event
+      progress; excludes deterministic diagnostics and report lifecycle comparison.
+
+      Rationale: First occurrence preserves evaluator delivery order and avoids
+      inventing a severity preference when the raw results are materially
+      inconsistent; the disagreement record preserves that distinction for review.
+
+      Consequences: Repeated provider findings cannot violate the event protocol's
+      fingerprint-uniqueness invariant or prevent terminal compilation settlement.
+    }
+
     DeterministicFoundationGating {
       Decision: Treat one deterministic error diagnostic as a failed foundation and
       skip every dependent evaluation stage.
@@ -303,10 +330,25 @@ expand SigilCompilationEvaluation {
   }
 
   cases {
+    EvaluatorDiagnosticNormalization {
+      Two evaluator findings resolving to one fingerprint produce one diagnostic
+      event, one stage-count entry, and one returned diagnostic.
+
+      When those raw findings differ in severity, evaluation records their material
+      disagreement while retaining only the first finding for externally visible
+      diagnostics.
+    }
+
+    CompilationEvaluation {
+      Cancellation during deterministic-foundation execution stops remaining work,
+      emits no further nonterminal progress, invokes no agent adapter, and rejects
+      with COMPILER_CANCELLED.
+    }
+
     DeterministicFoundationGating {
       A selected Sigil source with a structural error emits its deterministic
-      diagnostic, marks deterministic-foundation failed, skips semantic-readiness
-      and other dependent stages, and completes with a red report.
+      diagnostic, marks deterministic-foundation failed, skips semantic-readiness and
+      other dependent stages, and completes with a red report.
 
       A configured Codex evaluator receives no request for that structurally invalid
       compilation, so invalid evaluator output cannot replace the source diagnostic.
@@ -324,6 +366,10 @@ expand SigilCompilationEvaluation {
       Cancellation rejects with COMPILER_CANCELLED and a host or protocol failure
       rejects with COMPILER_FAILED; callers own terminal settlement after their
       durability or export work.
+
+      A file or workspace target expands to its selected components. Evaluation sends
+      one isolated request for each component and stage, preserving
+      selected-component order; no request combines their evidence.
     }
 
     AgentWorkspaceInspection {

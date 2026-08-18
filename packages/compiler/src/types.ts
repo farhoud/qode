@@ -39,6 +39,7 @@ export type StageState =
   | "running"
   | "completed"
   | "failed"
+  | "incomplete"
   | "skipped-by-dependency"
   | "disabled"
   | "cancelled";

@@ -292,7 +292,7 @@ Deno.test("malformed adapter result envelopes fail compilation", async () => {
     assertEquals(report.status, "red");
     assertEquals(
       report.stages.find((stage) => stage.id === "semantic-readiness")?.state,
-      "failed",
+      "incomplete",
     );
   } finally {
     await Deno.remove(root, { recursive: true });
@@ -486,6 +486,55 @@ Deno.test("warnings produce yellow and errors produce red", async () => {
     });
     assertEquals(red.status, "red");
     assertMatch(red.diagnostics[0].fingerprint, /^[a-f0-9]{64}$/);
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
+// @sigil tests packages/compiler/src/evaluation.sigil::SigilCompilationEvaluation::EvaluatorDiagnosticNormalization cases
+Deno.test("repeated evaluator fingerprints emit once and settle the report", async () => {
+  const root = await workspace(`component Example {
+  goal {
+    Explain the example.
+  }
+
+  interface {
+    ExampleOperation {
+      run()
+    }
+  }
+}
+`);
+  const finding = {
+    code: "SEMANTIC_AMBIGUITY",
+    severity: "warning" as const,
+    message: "Boundary is unclear.",
+    filePath: null,
+    line: null,
+    column: null,
+    evidence: "The interface omits its result.",
+    impact: "Consumers cannot rely on the operation.",
+    correction: "Define the result.",
+  };
+  try {
+    const events: CompilationEvent[] = [];
+    const report = await compile(root, { kind: "workspace" }, "standard", {
+      requestedStage: "semantic-readiness",
+      adapter: new MockAdapter([finding, finding]),
+      onEvent: (event) => {
+        events.push(event);
+      },
+    });
+    assertEquals(report.status, "yellow");
+    assertEquals(
+      report.diagnostics.filter((item) => item.code === finding.code).length,
+      1,
+    );
+    assertEquals(
+      events.filter((event) => event.type === "diagnostic").length,
+      1,
+    );
+    assertEquals(events.at(-1)?.type, "completed");
   } finally {
     await Deno.remove(root, { recursive: true });
   }

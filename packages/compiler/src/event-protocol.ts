@@ -68,7 +68,8 @@ export function startedPayload(
 
 export function isStageReport(value: unknown): value is StageReport {
   return validStageReport(value) &&
-    (value.state === "completed" || value.state === "failed");
+    (value.state === "completed" || value.state === "failed" ||
+      value.state === "incomplete");
 }
 
 export function isDiagnostic(value: unknown): value is CompilerDiagnostic {

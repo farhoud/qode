@@ -109,6 +109,7 @@ export function validStageReport(value: unknown): value is StageReport {
       "running",
       "completed",
       "failed",
+      "incomplete",
       "skipped-by-dependency",
       "disabled",
       "cancelled",

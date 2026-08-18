@@ -27,9 +27,10 @@ component SigilCompilationEventProtocol {
 
       stage-completed payload contains exactly report, one imported
       CompilationStageReport whose id identifies its stage and whose state is
-      completed or failed. diagnostic payload contains exactly diagnostic, one
-      imported CompilationDiagnostic, and optional componentName, one non-empty
-      caller-controlled display identity that is not inferred from semantic subjects.
+      completed, failed, or incomplete. diagnostic payload contains exactly
+      diagnostic, one imported CompilationDiagnostic, and optional componentName, one
+      non-empty caller-controlled display identity that is not inferred from semantic
+      subjects.
 
       completed payload contains exactly report, the authoritative imported
       CompilationReport. failed payload contains exactly code, one non-empty opaque

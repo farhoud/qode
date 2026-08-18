@@ -360,6 +360,7 @@ export async function compile(
       const before = diagnostics.length;
       const evaluations: NonNullable<StageReport["evaluations"]>[number][] = [];
       let state: StageReport["state"] = "completed";
+      const evaluatorFingerprints = new Set<string>();
       try {
         if (!definition.agentic) {
           for (const rawDiagnostic of coreDiagnostics) {
@@ -515,6 +516,10 @@ export async function compile(
                   previous,
                 );
                 evaluatorDiagnostics.push(diagnostic);
+                if (evaluatorFingerprints.has(diagnostic.fingerprint)) {
+                  continue;
+                }
+                evaluatorFingerprints.add(diagnostic.fingerprint);
                 diagnostics.push(diagnostic);
                 await requireEventDelivery(
                   await eventWriter.diagnostic(diagnostic, component.name),
@@ -548,7 +553,7 @@ export async function compile(
             }`,
           );
         }
-        state = "failed";
+        state = definition.agentic ? "incomplete" : "failed";
         failed.add(stage.id);
         const diagnostic = currentLifecycle(
           await stageFailure(stage.id, stageAdapters[0], error),

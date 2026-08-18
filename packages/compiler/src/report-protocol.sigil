@@ -43,9 +43,9 @@ component SigilCompilationReportProtocol {
 
     CompilationStageReport {
       contains exactly id, one non-empty stage identity; required, one boolean;
-      state, exactly pending, running, completed, failed, skipped-by-dependency,
-      disabled, or cancelled; evaluator, one non-empty evaluator identity; and
-      diagnosticCount, one nonnegative integer
+      state, exactly pending, running, completed, failed, incomplete,
+      skipped-by-dependency, disabled, or cancelled; evaluator, one non-empty
+      evaluator identity; and diagnosticCount, one nonnegative integer
 
       optionally contains startedAt and completedAt as RFC 3339 timestamps and
       evaluations as the ordered EvaluationTrace values produced for that stage
